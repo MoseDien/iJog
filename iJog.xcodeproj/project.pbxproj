@@ -14,6 +14,7 @@
 		1B5982BA4BA587929E88072F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F6B44DE607F168915D0D49CB /* Assets.xcassets */; };
 		1C048D5750DB5A82C2A19E87 /* RunsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AE7C19E88276768FAA1501 /* RunsRepository.swift */; };
 		20EF6E175D227A41DF93C786 /* Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6080D507C4F66CA7C0D66A1A /* Run.swift */; };
+		299356D1393C5DE87D569848 /* GeoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 980E62CACE79FBC5A0227D72 /* GeoTests.swift */; };
 		39378A1DC51CE9C79D73DFD4 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ABCE5D22B64C48FF9CD7860 /* Format.swift */; };
 		3A7C74E690D6040C2C5171DF /* RecordFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BD9127F961D979A3AFB5407 /* RecordFeatureTests.swift */; };
 		44DDF671FDB38041C666AFE1 /* swift-sharing_Sharing.bundle in Dependencies */ = {isa = PBXBuildFile; fileRef = 9BDEEF0769B290EF3E7198C3 /* swift-sharing_Sharing.bundle */; };
@@ -50,6 +51,7 @@
 		DBE6D97A25A4BDAADA0B5260 /* RunDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78EA3D3732793AEF2D0458B /* RunDetailView.swift */; };
 		E893CD060CC63FC79FFC064F /* ConcurrencyExtras.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8DB51FFE5B38363B12865181 /* ConcurrencyExtras.framework */; };
 		E9C7248BAA7BB4E10FD9F8EE /* HistoryFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C015938B401BADFD5B4160 /* HistoryFeature.swift */; };
+		F0357F3605C36C37DA290F3C /* Geo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 614516FF51FCBC36AF65EEE9 /* Geo.swift */; };
 		F43C1F20F8A4C890B9B65A23 /* TuistBundle+IJog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C80963F8927176EA0B5DC3 /* TuistBundle+IJog.swift */; };
 		F86C730A7FED2B08F2C86D1D /* Sharing2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B8DFEE55D4D9E9C5CE3C4882 /* Sharing2.framework */; };
 		F912C41EB256D6A42BCC9CF0 /* iJogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7265173AC7393C9619591D85 /* iJogApp.swift */; };
@@ -118,6 +120,7 @@
 		58B05BEA8F25DAFA5F032BA8 /* PerceptionCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = PerceptionCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A58C9E34F2F3BC1AF6F9D6D /* Clocks.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Clocks.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		6080D507C4F66CA7C0D66A1A /* Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Run.swift; sourceTree = "<group>"; };
+		614516FF51FCBC36AF65EEE9 /* Geo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geo.swift; sourceTree = "<group>"; };
 		62C80963F8927176EA0B5DC3 /* TuistBundle+IJog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TuistBundle+IJog.swift"; sourceTree = "<group>"; };
 		6BAFBF088CA626021FE70795 /* CasePaths.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CasePaths.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		7265173AC7393C9619591D85 /* iJogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iJogApp.swift; sourceTree = "<group>"; };
@@ -131,6 +134,7 @@
 		8DB51FFE5B38363B12865181 /* ConcurrencyExtras.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ConcurrencyExtras.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F67DE6BFC4FFE50094537E2 /* Dependencies.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Dependencies.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		96574764BB439EC426CFBF6C /* Sharing.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Sharing.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		980E62CACE79FBC5A0227D72 /* GeoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoTests.swift; sourceTree = "<group>"; };
 		9BDEEF0769B290EF3E7198C3 /* swift-sharing_Sharing.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "swift-sharing_Sharing.bundle"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1F8C096F32F39686A0E86C1 /* LocationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationClient.swift; sourceTree = "<group>"; };
 		A4B028B0B37B8D8864EBEE4F /* UIKitNavigationShim.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = UIKitNavigationShim.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -222,6 +226,7 @@
 			isa = PBXGroup;
 			children = (
 				2EE60E7127E4136A5DE05453 /* FormatTests.swift */,
+				980E62CACE79FBC5A0227D72 /* GeoTests.swift */,
 				36FF50F5DAAC14692EA99770 /* HistoryFeatureTests.swift */,
 				3BD9127F961D979A3AFB5407 /* RecordFeatureTests.swift */,
 			);
@@ -243,6 +248,7 @@
 			children = (
 				B704FB00A8467E02BD137A37 /* CloudSyncClient.swift */,
 				8ABCE5D22B64C48FF9CD7860 /* Format.swift */,
+				614516FF51FCBC36AF65EEE9 /* Geo.swift */,
 				A1F8C096F32F39686A0E86C1 /* LocationClient.swift */,
 				05AE7C19E88276768FAA1501 /* RunsRepository.swift */,
 			);
@@ -489,6 +495,7 @@
 				20EF6E175D227A41DF93C786 /* Run.swift in Sources */,
 				50FB5D68720B53EB8DA5D62C /* CloudSyncClient.swift in Sources */,
 				39378A1DC51CE9C79D73DFD4 /* Format.swift in Sources */,
+				F0357F3605C36C37DA290F3C /* Geo.swift in Sources */,
 				9B60A8709A9BB3AABC0A9A7E /* LocationClient.swift in Sources */,
 				1C048D5750DB5A82C2A19E87 /* RunsRepository.swift in Sources */,
 				F912C41EB256D6A42BCC9CF0 /* iJogApp.swift in Sources */,
@@ -500,6 +507,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				784E80F0FE644CDAB0270F67 /* FormatTests.swift in Sources */,
+				299356D1393C5DE87D569848 /* GeoTests.swift in Sources */,
 				AB300F5E5D3317C7D54DB896 /* HistoryFeatureTests.swift in Sources */,
 				3A7C74E690D6040C2C5171DF /* RecordFeatureTests.swift in Sources */,
 			);

@@ -125,6 +125,7 @@ struct RunsRepository {
 | 自动暂停阈值 2.0/2.5 m/s + 10s 确认 | 快走≈1.4-1.7 m/s、慢跑≈2.2+ m/s，两阈值滞回防抖；确认窗口防 GPS 瞬时漂移误判；GPS 不停（需检测恢复） |
 | 崩溃保护：跑步草稿 | App 被系统 kill/崩溃/误划掉时最多丢 10 秒数据。进行中状态每满 10 秒及手动暂停时写入 `Documents/RunDraft.json`（Runs 目录外，防被 loadRuns 误读）；启动时发现草稿弹窗"恢复/丢弃"；保存失败时草稿保留，下次启动可恢复 |
 | iCloud 同步：iCloud Drive 文档容器 | 数据本就是"每跑一个 UUID.json 文件"，直接在 iCloud 容器 `Documents/Runs/` 做文件并集合并（记录不可变→无内容冲突），比 CloudKit 轻。手动触发（历史页云朵按钮）→ `CloudSyncClient` 上传本地新增 + 下载云端新增 → 弹窗报数并刷新列表。v1 限制：删除不跨设备同步；自动同步（metadata query 监听）留待后续 |
+| 地图偏移修正（GCJ-02） | 中国大陆地图瓦片用加密 GCJ-02 坐标，CoreLocation 输出 WGS-84，直接绘制轨迹会整体偏移数百米。存储保留 WGS-84 原始数据，仅渲染时经 `displayCoordinate` 转换（公开近似算法，精度 1-2 米；境外自动跳过）。蓝色定位点由系统处理无需转换；距离计算仍基于 WGS-84 |
 | History 用 `StackState` 导航 | TCA 标准栈导航模式，路径可单测 |
 
 ## 测试策略

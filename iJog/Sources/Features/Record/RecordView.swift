@@ -102,7 +102,7 @@ struct RecordView: View {
     Map(position: $cameraPosition) {
       UserAnnotation()
       if store.route.count > 1 {
-        MapPolyline(coordinates: store.route.map(\.coordinate))
+        MapPolyline(coordinates: store.route.displayCoordinates)
           .stroke(
             Color.accentColor,
             style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)

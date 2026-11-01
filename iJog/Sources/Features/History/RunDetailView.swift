@@ -33,7 +33,7 @@ struct RunDetailView: View {
   private var mapView: some View {
     Map(initialPosition: .region(Self.fittedRegion(for: store.run.route))) {
       if store.run.route.count > 1 {
-        MapPolyline(coordinates: store.run.coordinates)
+        MapPolyline(coordinates: store.run.route.displayCoordinates)
           .stroke(
             Color.accentColor,
             style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
@@ -47,23 +47,24 @@ struct RunDetailView: View {
     .frame(height: 300)
   }
 
-  /// 根据轨迹计算适配显示范围（四周留 20% 边距；空轨迹回退到默认区域）
+  /// 根据轨迹计算适配显示范围（渲染坐标，四周留 20% 边距；空轨迹回退到默认区域）
   static func fittedRegion(for route: [RoutePoint]) -> MKCoordinateRegion {
-    guard let first = route.first else {
+    let display = route.displayCoordinates
+    guard let first = display.first else {
       return MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.3349, longitude: -122.009),
         span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
       )
     }
-    var minLat = first.lat
-    var maxLat = first.lat
-    var minLon = first.lon
-    var maxLon = first.lon
-    for point in route {
-      minLat = min(minLat, point.lat)
-      maxLat = max(maxLat, point.lat)
-      minLon = min(minLon, point.lon)
-      maxLon = max(maxLon, point.lon)
+    var minLat = first.latitude
+    var maxLat = first.latitude
+    var minLon = first.longitude
+    var maxLon = first.longitude
+    for coordinate in display {
+      minLat = min(minLat, coordinate.latitude)
+      maxLat = max(maxLat, coordinate.latitude)
+      minLon = min(minLon, coordinate.longitude)
+      maxLon = max(maxLon, coordinate.longitude)
     }
     let spanScale = 1.4
     return MKCoordinateRegion(
