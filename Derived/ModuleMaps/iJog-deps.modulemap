@@ -1,0 +1,2 @@
+extern module UIKitNavigationShim "/Users/belldien/Projects/iJog/.build/tuist-derived/ModuleMaps/UIKitNavigationShim/UIKitNavigationShim.modulemap"
+extern module _SwiftSyntaxCShims "/Users/belldien/Projects/iJog/.build/checkouts/swift-syntax/Sources/_SwiftSyntaxCShims/include/module.modulemap"
