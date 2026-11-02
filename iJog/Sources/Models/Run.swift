@@ -26,19 +26,34 @@ struct Run: Codable, Identifiable, Equatable, Hashable {
   var distance: Double
   /// 轨迹
   var route: [RoutePoint]
+  /// 软删除标记：删除只隐藏不真删（防数据丢失），可在历史页"显示所有数据"中恢复
+  var isHidden: Bool = false
 
   init(
     id: UUID = UUID(),
     startedAt: Date,
     duration: TimeInterval,
     distance: Double,
-    route: [RoutePoint] = []
+    route: [RoutePoint] = [],
+    isHidden: Bool = false
   ) {
     self.id = id
     self.startedAt = startedAt
     self.duration = duration
     self.distance = distance
     self.route = route
+    self.isHidden = isHidden
+  }
+
+  /// 兼容旧版本 JSON（无 isHidden 字段 → 视为 false）
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    startedAt = try container.decode(Date.self, forKey: .startedAt)
+    duration = try container.decode(TimeInterval.self, forKey: .duration)
+    distance = try container.decode(Double.self, forKey: .distance)
+    route = try container.decode([RoutePoint].self, forKey: .route)
+    isHidden = try container.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
   }
 
   var coordinates: [CLLocationCoordinate2D] {

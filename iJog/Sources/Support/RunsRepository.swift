@@ -2,12 +2,14 @@ import ComposableArchitecture
 import Foundation
 
 /// 跑步记录存储：每次跑步一个 JSON 文件，位于 Documents/Runs/；
-/// 进行中草稿位于 Documents/RunDraft.json（Runs 目录外，避免被 loadRuns 误读）
+/// 进行中草稿位于 Documents/RunDraft.json（Runs 目录外，避免被 loadRuns 误读）。
+/// 删除为软删除（isHidden 标记，文件保留），防数据丢失
 @DependencyClient
 struct RunsRepository {
   var loadRuns: @Sendable () throws -> [Run] = { [] }
   var save: @Sendable (Run) throws -> Void
-  var delete: @Sendable (UUID) throws -> Void
+  /// 隐藏/恢复记录（true → 隐藏；文件原地改写，不删除）
+  var setHidden: @Sendable (UUID, Bool) throws -> Void
   var saveDraft: @Sendable (RunDraft) throws -> Void
   var loadDraft: @Sendable () -> RunDraft? = { nil }
   var clearDraft: @Sendable () -> Void = {}
@@ -58,11 +60,12 @@ extension RunsRepository: DependencyKey {
         options: .atomic
       )
     },
-    delete: { id in
-      let path = try runsDirectory().appendingPathComponent("\(id.uuidString).json").path
-      if FileManager.default.fileExists(atPath: path) {
-        try FileManager.default.removeItem(atPath: path)
-      }
+    setHidden: { id, hidden in
+      let url = try runsDirectory().appendingPathComponent("\(id.uuidString).json")
+      var run = try JSONDecoder.runs.decode(Run.self, from: Data(contentsOf: url))
+      run.isHidden = hidden
+      let data = try JSONEncoder.runs.encode(run)
+      try data.write(to: url, options: .atomic)
     },
     saveDraft: { draft in
       let url = try FileManager.default

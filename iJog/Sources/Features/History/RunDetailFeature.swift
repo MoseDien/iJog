@@ -25,7 +25,7 @@ struct RunDetailFeature {
     }
 
     enum Delegate: Equatable {
-      /// 删除已完成（含文件已不存在的情况），父级收到后应 pop 该页
+      /// 删除（软删除，记录已标记隐藏）已完成，父级收到后应 pop 该页
       case didDeleteRun(UUID)
     }
   }
@@ -45,6 +45,12 @@ struct RunDetailFeature {
           ButtonState(role: .cancel) {
             TextState(String(localized: "Cancel"))
           }
+        } message: {
+          TextState(
+            String(
+              localized: "It will only be hidden, not erased. Turn on Show All in History to restore it."
+            )
+          )
         }
         return .none
 
@@ -52,7 +58,8 @@ struct RunDetailFeature {
         state.confirmationDialog = nil
         let id = state.run.id
         return .run { send in
-          try? runsRepository.delete(id)
+          // 软删除：只隐藏不真删，文件保留
+          try? runsRepository.setHidden(id, true)
           await send(.delegate(.didDeleteRun(id)))
         }
 

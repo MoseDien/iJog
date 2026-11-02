@@ -90,6 +90,7 @@ private final class FakeSpeedLocation: CLLocation, @unchecked Sendable {
   continuation.yield(location(a))
   await store.receive(.locationUpdated(point: a, speed: 3.0)) {
     $0.route = [a]
+    $0.anchor = a
     $0.lastSpeed = 3.0
   }
 
@@ -97,18 +98,21 @@ private final class FakeSpeedLocation: CLLocation, @unchecked Sendable {
   await store.receive(.locationUpdated(point: b, speed: 3.0)) {
     $0.distance = haversine(a.coordinate, b.coordinate)
     $0.route = [a, b]
+    $0.anchor = b
   }
 
   continuation.yield(location(c))
   await store.receive(.locationUpdated(point: c, speed: 3.0)) {
     $0.distance = haversine(a.coordinate, b.coordinate) + haversine(b.coordinate, c.coordinate)
     $0.route = [a, b, c]
+    $0.anchor = c
   }
 
   continuation.yield(location(d))
   await store.receive(.locationUpdated(point: d, speed: 3.0)) {
     $0.distance = expectedDistance
     $0.route = [a, b, c, d]
+    $0.anchor = d
   }
 
   // 结束并保存
@@ -171,6 +175,7 @@ private final class FakeSpeedLocation: CLLocation, @unchecked Sendable {
   continuation.yield(location(a))
   await store.receive(.locationUpdated(point: a, speed: 3.0)) {
     $0.route = [a]
+    $0.anchor = a
     $0.lastSpeed = 3.0
   }
 
@@ -181,6 +186,7 @@ private final class FakeSpeedLocation: CLLocation, @unchecked Sendable {
   await store.receive(.locationUpdated(point: b, speed: 3.0)) {
     $0.distance = haversine(a.coordinate, b.coordinate) // 抖动点没有贡献距离
     $0.route = [a, b]
+    $0.anchor = b
   }
 
   // 测试直接结束，跳过仍在运行的计时/定位长驻 effect
@@ -232,9 +238,78 @@ private final class FakeSpeedLocation: CLLocation, @unchecked Sendable {
   await store.skipInFlightEffects()
 }
 
+@Test func manualPauseDisplacementIsNotCounted() async throws {
+  let clock = TestClock()
+  // start 与 resume 各订阅一次定位流；AsyncStream 单消费者，准备两条独立流
+  let (stream1, continuation1) = AsyncStream<CLLocation>.makeStream()
+  let (stream2, continuation2) = AsyncStream<CLLocation>.makeStream()
+  let sources = Ref([stream1, stream2])
+
+  let store = TestStore(initialState: RecordFeature.State()) {
+    RecordFeature()
+  } withDependencies: {
+    $0.continuousClock = clock
+    $0.date = DateGenerator { fixedDate }
+    $0.locationClient.authorizationStatus = { .authorizedWhenInUse }
+    $0.locationClient.requestWhenInUse = {}
+    $0.locationClient.startUpdates = {}
+    $0.locationClient.stopUpdates = {}
+    $0.locationClient.locations = { sources.value.removeFirst() }
+    $0.runsRepository.saveDraft = { _ in }
+    $0.runsRepository.clearDraft = {}
+  }
+
+  await store.send(.startTapped) {
+    $0.session = .running
+    $0.startedAt = fixedDate
+  }
+
+  let a = RoutePoint(lat: 0, lon: 0)
+  continuation1.yield(location(a))
+  await store.receive(.locationUpdated(point: a, speed: 3.0)) {
+    $0.route = [a]
+    $0.anchor = a
+    $0.lastSpeed = 3.0
+  }
+  await clock.advance(by: .seconds(1))
+  await store.receive(.timerTicked) { $0.elapsed = 1 }
+
+  // 手动暂停期间走远（GPS 已停，位移不可知）
+  await store.send(.pauseTapped) {
+    $0.session = .paused
+    $0.lastSpeed = nil
+  }
+  await store.send(.resumeTapped) {
+    $0.session = .running
+    $0.anchor = nil // 恢复后首个定位点只重新锚定、不计距离
+  }
+
+  let z = RoutePoint(lat: 0, lon: 0.01) // 暂停期间位移约 1.1 公里
+  continuation2.yield(location(z, speed: 3.0))
+  await store.receive(.locationUpdated(point: z, speed: 3.0)) {
+    $0.route = [a, z]
+    $0.anchor = z
+    $0.lastSpeed = 3.0
+    // distance 保持 0：暂停期间位移不计入
+  }
+  #expect(store.state.distance == 0)
+
+  // 恢复后的移动从新锚点正常起算
+  let y = RoutePoint(lat: 0, lon: 0.02)
+  continuation2.yield(location(y, speed: 3.0))
+  await store.receive(.locationUpdated(point: y, speed: 3.0)) {
+    $0.route = [a, z, y]
+    $0.anchor = y
+    $0.distance = haversine(z.coordinate, y.coordinate)
+  }
+
+  await store.skipInFlightEffects()
+}
+
 // MARK: - 自动暂停（慢速自动排除）
 
 /// 把 store 推进到"运行中且已自动暂停"的状态：a(3.0) → 2 秒 → b(1.5) → 10 秒慢速。
+/// 确认窗口内计时照常累计，进入自动暂停时 elapsed = 11、anchor = b。
 /// 返回 store 与定位流 continuation，供调用方继续喂点；prepare 可追加依赖覆盖。
 private func makeAutoPausedStore(
   clock: TestClock<Duration>,
@@ -272,6 +347,7 @@ private func makeAutoPausedStore(
   continuation.yield(location(a))
   await store.receive(.locationUpdated(point: a, speed: 3.0)) {
     $0.route = [a]
+    $0.anchor = a
     $0.lastSpeed = 3.0
   }
 
@@ -284,12 +360,16 @@ private func makeAutoPausedStore(
   await store.receive(.locationUpdated(point: b, speed: 1.5)) {
     $0.distance = haversine(a.coordinate, b.coordinate)
     $0.route = [a, b]
+    $0.anchor = b
     $0.lastSpeed = 1.5
   }
 
   await clock.advance(by: .seconds(9))
   for second in 1...9 {
-    await store.receive(.timerTicked) { $0.slowSeconds = second }
+    await store.receive(.timerTicked) {
+      $0.slowSeconds = second
+      $0.elapsed = Double(second + 2)
+    }
   }
   await clock.advance(by: .seconds(1))
   await store.receive(.timerTicked) {
@@ -303,11 +383,12 @@ private func makeAutoPausedStore(
   let clock = TestClock()
   let (store, continuation) = try await makeAutoPausedStore(clock: clock)
 
-  // 自动暂停期间：慢速点被丢弃（仅更新 lastSpeed），计时冻结
+  // 自动暂停期间：慢速点被丢弃（仅更新 lastSpeed 与距离锚点），计时冻结
   let c = RoutePoint(lat: 0, lon: 0.02)
   continuation.yield(location(c, speed: 1.2))
   await store.receive(.locationUpdated(point: c, speed: 1.2)) {
     $0.lastSpeed = 1.2
+    $0.anchor = c
   }
 
   await clock.advance(by: .seconds(2))
@@ -315,7 +396,7 @@ private func makeAutoPausedStore(
   await store.receive(.timerTicked) { $0.slowSeconds = 12 }
 
   #expect(store.state.isAutoPaused)
-  #expect(store.state.elapsed == 2) // 冻结在进入慢速前
+  #expect(store.state.elapsed == 11) // 冻结在进入自动暂停那一刻（确认窗口内照常计时）
   #expect(store.state.route.count == 2) // 慢速点未进轨迹
 
   await store.skipInFlightEffects()
@@ -336,11 +417,12 @@ private func makeAutoPausedStore(
     $0.lastSpeed = 3.0
     $0.distance = haversine(a.coordinate, b.coordinate) + haversine(b.coordinate, d.coordinate)
     $0.route = [a, b, d]
+    $0.anchor = d
   }
 
-  // 恢复后计时继续
+  // 恢复后计时继续（确认窗口内已累计到 11）
   await clock.advance(by: .seconds(1))
-  await store.receive(.timerTicked) { $0.elapsed = 3 }
+  await store.receive(.timerTicked) { $0.elapsed = 12 }
 
   await store.skipInFlightEffects()
 }
@@ -349,15 +431,335 @@ private func makeAutoPausedStore(
   let clock = TestClock()
   let (store, continuation) = try await makeAutoPausedStore(clock: clock)
 
-  // 速度 2.2 m/s 介于慢速阈值(2.0)与恢复阈值(2.5)之间：保持暂停，点被丢弃
+  // 速度 2.2 m/s 介于慢速阈值(2.0)与恢复阈值(2.5)之间：保持暂停，点被丢弃（仅移动锚点）
   let c = RoutePoint(lat: 0, lon: 0.02)
   continuation.yield(location(c, speed: 2.2))
   await store.receive(.locationUpdated(point: c, speed: 2.2)) {
     $0.lastSpeed = 2.2
+    $0.anchor = c
   }
 
   #expect(store.state.isAutoPaused)
   #expect(store.state.route.count == 2)
+
+  await store.skipInFlightEffects()
+}
+
+@Test func confirmWindowCountsTimeAndDistance() async throws {
+  let clock = TestClock()
+  let (locations, continuation) = AsyncStream<CLLocation>.makeStream()
+
+  let store = TestStore(initialState: RecordFeature.State()) {
+    RecordFeature()
+  } withDependencies: {
+    $0.continuousClock = clock
+    $0.date = DateGenerator { fixedDate }
+    $0.locationClient.authorizationStatus = { .authorizedWhenInUse }
+    $0.locationClient.requestWhenInUse = {}
+    $0.locationClient.startUpdates = {}
+    $0.locationClient.stopUpdates = {}
+    $0.locationClient.locations = { locations }
+    $0.runsRepository.saveDraft = { _ in }
+    $0.runsRepository.clearDraft = {}
+  }
+
+  await store.send(.startTapped) {
+    $0.session = .running
+    $0.startedAt = fixedDate
+  }
+
+  let a = RoutePoint(lat: 0, lon: 0)
+  let b = RoutePoint(lat: 0, lon: 0.0001) // ≈ 11 米
+
+  continuation.yield(location(a))
+  await store.receive(.locationUpdated(point: a, speed: 3.0)) {
+    $0.route = [a]
+    $0.anchor = a
+    $0.lastSpeed = 3.0
+  }
+
+  // 慢下来走路：确认窗口（未满 10 秒）期间时间照常走、距离照常计——配速不自欺
+  continuation.yield(location(b, speed: 1.5))
+  await store.receive(.locationUpdated(point: b, speed: 1.5)) {
+    $0.route = [a, b]
+    $0.anchor = b
+    $0.lastSpeed = 1.5
+    $0.distance = haversine(a.coordinate, b.coordinate)
+  }
+
+  await clock.advance(by: .seconds(10))
+  for second in 1...9 {
+    await store.receive(.timerTicked) {
+      $0.slowSeconds = second
+      $0.elapsed = Double(second)
+    }
+  }
+  // 第 10 秒：进入自动暂停，计时/距离从这一刻同时冻结
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 10
+    $0.isAutoPaused = true
+  }
+  #expect(store.state.elapsed == 9)
+  #expect(store.state.distance == haversine(a.coordinate, b.coordinate))
+
+  // 暂停后慢速点只移动锚点，不进轨迹、不涨距离
+  let c = RoutePoint(lat: 0, lon: 0.0002)
+  continuation.yield(location(c, speed: 1.2))
+  await store.receive(.locationUpdated(point: c, speed: 1.2)) {
+    $0.lastSpeed = 1.2
+    $0.anchor = c
+  }
+  #expect(store.state.route.count == 2)
+  #expect(store.state.distance == haversine(a.coordinate, b.coordinate))
+
+  await store.skipInFlightEffects()
+}
+
+@Test func hysteresisBandSpeedDoesNotResetSlowCount() async throws {
+  let clock = TestClock()
+  let (locations, continuation) = AsyncStream<CLLocation>.makeStream()
+
+  let store = TestStore(initialState: RecordFeature.State()) {
+    RecordFeature()
+  } withDependencies: {
+    $0.continuousClock = clock
+    $0.date = DateGenerator { fixedDate }
+    $0.locationClient.authorizationStatus = { .authorizedWhenInUse }
+    $0.locationClient.requestWhenInUse = {}
+    $0.locationClient.startUpdates = {}
+    $0.locationClient.stopUpdates = {}
+    $0.locationClient.locations = { locations }
+    $0.runsRepository.saveDraft = { _ in }
+    $0.runsRepository.clearDraft = {}
+  }
+
+  await store.send(.startTapped) {
+    $0.session = .running
+    $0.startedAt = fixedDate
+  }
+
+  let a = RoutePoint(lat: 0, lon: 0)
+  continuation.yield(location(a, speed: 1.5))
+  await store.receive(.locationUpdated(point: a, speed: 1.5)) {
+    $0.route = [a]
+    $0.anchor = a
+    $0.lastSpeed = 1.5
+  }
+
+  // 慢速 4 秒
+  await clock.advance(by: .seconds(4))
+  for second in 1...4 {
+    await store.receive(.timerTicked) {
+      $0.slowSeconds = second
+      $0.elapsed = Double(second)
+    }
+  }
+
+  // GPS 毛刺 2.2 m/s（滞回带内，同一点）：不清零，只回落 1 分
+  continuation.yield(location(a, speed: 2.2))
+  await store.receive(.locationUpdated(point: a, speed: 2.2)) {
+    $0.lastSpeed = 2.2
+  }
+  await clock.advance(by: .seconds(1))
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 3
+    $0.elapsed = 5
+  }
+
+  // 继续慢速：从 3 分接着涨，仍能凑满确认窗口（毛刺不阻断触发）
+  continuation.yield(location(a, speed: 1.5))
+  await store.receive(.locationUpdated(point: a, speed: 1.5)) {
+    $0.lastSpeed = 1.5
+  }
+  await clock.advance(by: .seconds(6))
+  for second in 4...9 {
+    await store.receive(.timerTicked) {
+      $0.slowSeconds = second
+      $0.elapsed = Double(second + 2)
+    }
+  }
+  await clock.advance(by: .seconds(1))
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 10
+    $0.isAutoPaused = true
+  }
+
+  #expect(store.state.isAutoPaused)
+
+  await store.skipInFlightEffects()
+}
+
+@Test func fastReadingResetsSlowCount() async throws {
+  let clock = TestClock()
+  let (locations, continuation) = AsyncStream<CLLocation>.makeStream()
+
+  let store = TestStore(initialState: RecordFeature.State()) {
+    RecordFeature()
+  } withDependencies: {
+    $0.continuousClock = clock
+    $0.date = DateGenerator { fixedDate }
+    $0.locationClient.authorizationStatus = { .authorizedWhenInUse }
+    $0.locationClient.requestWhenInUse = {}
+    $0.locationClient.startUpdates = {}
+    $0.locationClient.stopUpdates = {}
+    $0.locationClient.locations = { locations }
+    $0.runsRepository.saveDraft = { _ in }
+    $0.runsRepository.clearDraft = {}
+  }
+
+  await store.send(.startTapped) {
+    $0.session = .running
+    $0.startedAt = fixedDate
+  }
+
+  let a = RoutePoint(lat: 0, lon: 0)
+  continuation.yield(location(a, speed: 1.5))
+  await store.receive(.locationUpdated(point: a, speed: 1.5)) {
+    $0.route = [a]
+    $0.anchor = a
+    $0.lastSpeed = 1.5
+  }
+
+  // 慢速 6 秒后速度回到 2.5 以上：计数清零、重新累计
+  await clock.advance(by: .seconds(6))
+  for second in 1...6 {
+    await store.receive(.timerTicked) {
+      $0.slowSeconds = second
+      $0.elapsed = Double(second)
+    }
+  }
+  continuation.yield(location(a, speed: 3.0))
+  await store.receive(.locationUpdated(point: a, speed: 3.0)) {
+    $0.lastSpeed = 3.0
+  }
+  await clock.advance(by: .seconds(1))
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 0
+    $0.elapsed = 7
+  }
+
+  // 重新慢速 3 秒：从零计数，不满确认窗口不触发
+  continuation.yield(location(a, speed: 1.5))
+  await store.receive(.locationUpdated(point: a, speed: 1.5)) {
+    $0.lastSpeed = 1.5
+  }
+  await clock.advance(by: .seconds(3))
+  for second in 8...10 {
+    await store.receive(.timerTicked) {
+      $0.slowSeconds = second - 7
+      $0.elapsed = Double(second)
+    }
+  }
+
+  #expect(!store.state.isAutoPaused)
+  #expect(store.state.slowSeconds == 3)
+
+  await store.skipInFlightEffects()
+}
+
+@Test func hysteresisBandSpeedDecaysWithoutAutoPause() async throws {
+  let clock = TestClock()
+  let (locations, continuation) = AsyncStream<CLLocation>.makeStream()
+
+  let store = TestStore(initialState: RecordFeature.State()) {
+    RecordFeature()
+  } withDependencies: {
+    $0.continuousClock = clock
+    $0.date = DateGenerator { fixedDate }
+    $0.locationClient.authorizationStatus = { .authorizedWhenInUse }
+    $0.locationClient.requestWhenInUse = {}
+    $0.locationClient.startUpdates = {}
+    $0.locationClient.stopUpdates = {}
+    $0.locationClient.locations = { locations }
+    $0.runsRepository.saveDraft = { _ in }
+    $0.runsRepository.clearDraft = {}
+  }
+
+  await store.send(.startTapped) {
+    $0.session = .running
+    $0.startedAt = fixedDate
+  }
+
+  // 稳定慢跑在滞回带 [2.0, 2.5)：不应触发自动暂停
+  let a = RoutePoint(lat: 0, lon: 0)
+  continuation.yield(location(a, speed: 2.2))
+  await store.receive(.locationUpdated(point: a, speed: 2.2)) {
+    $0.route = [a]
+    $0.anchor = a
+    $0.lastSpeed = 2.2
+  }
+  await clock.advance(by: .seconds(2))
+  await store.receive(.timerTicked) { $0.elapsed = 1 }
+  await store.receive(.timerTicked) { $0.elapsed = 2 }
+
+  // 偶发掉速 1 秒（< 2.0）：只涨 1 分
+  continuation.yield(location(a, speed: 1.8))
+  await store.receive(.locationUpdated(point: a, speed: 1.8)) {
+    $0.lastSpeed = 1.8
+  }
+  await clock.advance(by: .seconds(1))
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 1
+    $0.elapsed = 3
+  }
+
+  // 回到滞回带：分数衰减回 0，计时照常
+  continuation.yield(location(a, speed: 2.2))
+  await store.receive(.locationUpdated(point: a, speed: 2.2)) {
+    $0.lastSpeed = 2.2
+  }
+  await clock.advance(by: .seconds(5))
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 0
+    $0.elapsed = 4
+  }
+  for second in 5...8 {
+    await store.receive(.timerTicked) { $0.elapsed = Double(second) }
+  }
+
+  #expect(!store.state.isAutoPaused)
+  #expect(store.state.slowSeconds == 0)
+  #expect(store.state.elapsed == 8)
+
+  await store.skipInFlightEffects()
+}
+
+@Test func autoPauseExcludesWalkingDistanceWithoutResumeJump() async throws {
+  let clock = TestClock()
+  let (store, continuation) = try await makeAutoPausedStore(clock: clock)
+
+  let a = RoutePoint(lat: 0, lon: 0)
+  let b = RoutePoint(lat: 0, lon: 0.01)
+  let distanceBefore = haversine(a.coordinate, b.coordinate)
+
+  // 暂停期间走远约 1.1 公里：仅移动锚点，距离/轨迹冻结
+  let w1 = RoutePoint(lat: 0, lon: 0.015)
+  let w2 = RoutePoint(lat: 0, lon: 0.02)
+  continuation.yield(location(w1, speed: 1.2))
+  await store.receive(.locationUpdated(point: w1, speed: 1.2)) {
+    $0.lastSpeed = 1.2
+    $0.anchor = w1
+  }
+  continuation.yield(location(w2, speed: 1.2))
+  await store.receive(.locationUpdated(point: w2, speed: 1.2)) {
+    $0.lastSpeed = 1.2
+    $0.anchor = w2
+  }
+  #expect(store.state.distance == distanceBefore)
+
+  // 速度回升恢复：距离只从锚点 w2 续算（≈11 米），暂停期间走掉的位移不整段跳入
+  let r = RoutePoint(lat: 0, lon: 0.0201)
+  continuation.yield(location(r, speed: 3.0))
+  await store.receive(.locationUpdated(point: r, speed: 3.0)) {
+    $0.isAutoPaused = false
+    $0.slowSeconds = 0
+    $0.lastSpeed = 3.0
+    $0.anchor = r
+    $0.route = [a, b, r]
+    $0.distance = distanceBefore + haversine(w2.coordinate, r.coordinate)
+  }
+
+  #expect(store.state.distance == distanceBefore + haversine(w2.coordinate, r.coordinate))
 
   await store.skipInFlightEffects()
 }
@@ -391,7 +793,7 @@ private func makeAutoPausedStore(
   let expectedRun = Run(
     id: fixedID,
     startedAt: fixedDate,
-    duration: 2,
+    duration: 11,
     distance: haversine(a.coordinate, b.coordinate),
     route: [a, b]
   )
@@ -439,6 +841,7 @@ private func makeAutoPausedStore(
   continuation.yield(location(a, speed: 3.0))
   await store.receive(.locationUpdated(point: a, speed: 3.0)) {
     $0.route = [a]
+    $0.anchor = a
     $0.lastSpeed = 3.0
   }
   continuation.yield(location(jitter, speed: 1.0))
@@ -446,13 +849,17 @@ private func makeAutoPausedStore(
     $0.lastSpeed = 1.0
   }
 
-  // 10 秒慢速进入自动暂停，再 300 秒触发自动结束
+  // 10 秒慢速进入自动暂停（窗口内计时照常），再 300 秒触发自动结束
   await clock.advance(by: .seconds(10))
-  for second in 1...10 {
+  for second in 1...9 {
     await store.receive(.timerTicked) {
       $0.slowSeconds = second
-      if second == 10 { $0.isAutoPaused = true }
+      $0.elapsed = Double(second)
     }
+  }
+  await store.receive(.timerTicked) {
+    $0.slowSeconds = 10
+    $0.isAutoPaused = true
   }
   await clock.advance(by: .seconds(300))
   for second in 11...309 {
@@ -466,6 +873,7 @@ private func makeAutoPausedStore(
     $0.elapsed = 0
     $0.distance = 0
     $0.route = []
+    $0.anchor = nil
     $0.isAutoPaused = false
     $0.lastSpeed = nil
     $0.slowSeconds = 0
@@ -507,6 +915,7 @@ private func makeAutoPausedStore(
   continuation.yield(location(a, speed: 1.0))
   await store.receive(.locationUpdated(point: a, speed: 1.0)) {
     $0.route = [a]
+    $0.anchor = a
     $0.lastSpeed = 1.0
   }
 
@@ -678,6 +1087,7 @@ private func makeAutoPausedStore(
     $0.elapsed = draft.elapsed
     $0.distance = draft.distance
     $0.route = draft.route
+    $0.anchor = draft.route.last // 从最后轨迹点续锚
   }
 
   await store.skipInFlightEffects()
@@ -723,6 +1133,7 @@ private func makeAutoPausedStore(
     $0.elapsed = draft.elapsed
     $0.distance = draft.distance
     $0.route = draft.route
+    $0.anchor = draft.route.last
   }
 }
 

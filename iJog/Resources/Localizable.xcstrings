@@ -374,6 +374,83 @@
           }
         }
       }
+    },
+    "Show All" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示所有数据"
+          }
+        }
+      }
+    },
+    "Hidden" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已隐藏"
+          }
+        }
+      }
+    },
+    "No Visible Runs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可见记录"
+          }
+        }
+      }
+    },
+    "Turn on Show All to see hidden runs." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开“显示所有数据”可查看已隐藏的记录。"
+          }
+        }
+      }
+    },
+    "It will only be hidden, not erased. Turn on Show All in History to restore it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这条记录只会被隐藏，不会被清除。在历史页打开“显示所有数据”即可恢复。"
+          }
+        }
+      }
+    },
+    "On" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

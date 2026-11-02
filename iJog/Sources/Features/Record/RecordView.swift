@@ -75,7 +75,7 @@ struct RecordView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
       Text(value)
-        .font(.system(.title2, design: .rounded, weight: .semibold))
+        .font(.system(.title, design: .rounded, weight: .semibold))
         .monospacedDigit()
         .contentTransition(.numericText())
         .animation(.default, value: value)
@@ -115,6 +115,21 @@ struct RecordView: View {
     }
     .clipShape(RoundedRectangle(cornerRadius: 16))
     .frame(maxHeight: .infinity)
+    .overlay {
+      // 跑步中：屏幕中央常显当前时长（自动暂停时冻结值照常显示）
+      if store.session == .running {
+        Text(formatDuration(store.elapsed))
+          .font(.system(.title, design: .rounded, weight: .bold))
+          .monospacedDigit()
+          .contentTransition(.numericText())
+          .animation(.default, value: store.elapsed)
+          .padding(.horizontal, 20)
+          .padding(.vertical, 10)
+          .background(.thinMaterial, in: Capsule())
+          .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+          .allowsHitTesting(false)
+      }
+    }
     .onChange(of: store.session == .running) { _, isRunning in
       if isRunning {
         cameraPosition = .userLocation(followsHeading: true, fallback: .automatic)

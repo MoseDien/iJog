@@ -26,8 +26,13 @@ import Testing
 }
 
 @Test func durationFormatting() {
-  #expect(formatDuration(0) == "0:00:00")
-  #expect(formatDuration(59.4) == "0:01:00") // 向上取整
+  // 不足 1 小时只显示 mm:ss
+  #expect(formatDuration(0) == "00:00")
+  #expect(formatDuration(59.4) == "01:00") // 向上取整
+  #expect(formatDuration(65) == "01:05")
+  #expect(formatDuration(3599) == "59:59")
+  // 满 1 小时显示 h:mm:ss
+  #expect(formatDuration(3600) == "1:00:00")
   #expect(formatDuration(3661) == "1:01:01")
 }
 

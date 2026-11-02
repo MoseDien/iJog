@@ -34,6 +34,7 @@ struct Run: Codable, Identifiable, Equatable {
   var duration: TimeInterval // 实际跑步秒数（不含暂停）
   var distance: Double       // 米
   var route: [RoutePoint]    // 轨迹点序列
+  var isHidden: Bool         // 软删除标记：删除只隐藏不真删（旧 JSON 无此字段，自定义 init(from:) 解码为 false）
 }
 
 struct RoutePoint: Codable, Equatable {
@@ -84,7 +85,7 @@ Live 实现要点：
 struct RunsRepository {
   var loadRuns: @Sendable () throws -> [Run]
   var save: @Sendable (Run) throws -> Void
-  var delete: @Sendable (UUID) throws -> Void
+  var setHidden: @Sendable (UUID, Bool) throws -> Void
 }
 ```
 
@@ -100,15 +101,15 @@ struct RunsRepository {
     └───────────────────┴────┴──────────────────────┘
                      （保存 Run 后重置）
 
-  running ──持续慢速≥10s──► autoPaused（isAutoPaused = true，冻结计时/距离/轨迹）
-  autoPaused ──speed ≥ 2.5 m/s──► running（自动恢复）
+  running ──慢速计分满 10 分──► autoPaused（isAutoPaused = true，冻结计时/距离/轨迹）
+  autoPaused ──speed ≥ 2.5 m/s──► running（自动恢复，从距离锚点续算）
   autoPaused ──暂停满 5 分钟──► 自动结束（有轨迹→保存 / 无移动→丢弃）
 ```
 
 - **计时**：`running` 时用 `continuousClock.timer` 每秒发 `timerTicked`，`elapsed` 累加；暂停时取消该 effect。最终时长精度为秒。
-- **距离**：`locationUpdated` 到来时与上一个有效点做 haversine 计算，**位移 < 2 米的点直接丢弃**（过滤 GPS 静止抖动，防止站在原地距离虚增），否则累加进 `distance` 并追加 `route`。
+- **距离**：`locationUpdated` 到来时与**距离锚点**（最后见过的有效位置，独立于轨迹）做 haversine 计算，**位移 < 2 米的点直接丢弃**（过滤 GPS 静止抖动，防止站在原地距离虚增），否则累加进 `distance`、移动锚点并追加 `route`。
 - **配速**：展示值 = `elapsed / (distance / 1000)`，距离为 0 时显示 `--`。
-- **自动暂停（慢速自动排除）**：速度 < 2.0 m/s 持续 10 秒 → 冻结计时/距离/轨迹（慢速点丢弃）；速度 ≥ 2.5 m/s 自动恢复（滞回防抖）。GPS 在自动暂停期间保持开启以检测恢复；手动暂停则停 GPS。首次定位前（`lastSpeed == nil`）不参与慢速判断。开关在记录页工具栏，默认开。
+- **自动暂停（慢速自动排除）**：慢速计分带**滞回 + 衰减**——每秒速度 < 2.0 m/s 记 +1 分，≥ 2.5 m/s 清零，滞回带 [2.0, 2.5) 内 -1 回落（GPS 多普勒速度有毛刺，"任何一次 ≥ 阈值就清零"会让走路时永远凑不满确认窗口；衰减则保证稳定慢跑不误判）。**确认窗口内时间/距离照常计入**（配速 = 时间/距离，只冻一项会让配速虚降），满 10 分进入自动暂停那一刻起计时/距离/轨迹同时冻结。暂停期间慢速点丢弃但**距离锚点随之移动**——暂停期间的位移不计入，恢复（速度 ≥ 2.5 m/s）时从锚点续算，不产生距离跳变。手动暂停期间 GPS 关闭、位移不可知，恢复后首个定位点只重新锚定、不计距离。GPS 在自动暂停期间保持开启以检测恢复；手动暂停则停 GPS。首次定位前（`lastSpeed == nil`）不参与慢速判断。开关在记录页工具栏，默认开。
 - **慢速超时自动结束**：自动暂停持续 5 分钟 → 自动结束并保存当前跑步（等同手动"结束"）；若期间几乎无移动（轨迹不足 2 个点）则静默丢弃并清草稿，不生成空记录。
 
 ## 关键决策记录
@@ -122,9 +123,10 @@ struct RunsRepository {
 | 2 米抖动阈值 | 静止时 GPS 抖动通常 ±10m 内但密集；`distanceFilter = 5` 已过滤大部分，2 米兜底防止缓慢漂移累积 |
 | 计时用 clock 而非时间差 | `paused` 需要停表语义；用 TestClock 可在单测中虚拟推进 |
 | 结束需二次确认 | 防止跑步中误触丢数据 |
-| 自动暂停阈值 2.0/2.5 m/s + 10s 确认 | 快走≈1.4-1.7 m/s、慢跑≈2.2+ m/s，两阈值滞回防抖；确认窗口防 GPS 瞬时漂移误判；GPS 不停（需检测恢复） |
+| 自动暂停阈值 2.0/2.5 m/s + 10s 确认 | 快走≈1.4-1.7 m/s、慢跑≈2.2+ m/s，两阈值滞回防抖；计分制（<2.0 计 +1、≥2.5 清零、带内 -1 衰减）防多普勒速度毛刺反复清零；确认窗口内时间/距离照常计入、进入暂停才同时冻结（避免配速虚降）；距离锚点独立于轨迹，暂停/恢复不产生距离跳变；GPS 不停（需检测恢复） |
 | 崩溃保护：跑步草稿 | App 被系统 kill/崩溃/误划掉时最多丢 10 秒数据。进行中状态每满 10 秒及手动暂停时写入 `Documents/RunDraft.json`（Runs 目录外，防被 loadRuns 误读）；启动时发现草稿弹窗"恢复/丢弃"；保存失败时草稿保留，下次启动可恢复 |
-| iCloud 同步：iCloud Drive 文档容器 | 数据本就是"每跑一个 UUID.json 文件"，直接在 iCloud 容器 `Documents/Runs/` 做文件并集合并（记录不可变→无内容冲突），比 CloudKit 轻。手动触发（历史页云朵按钮）→ `CloudSyncClient` 上传本地新增 + 下载云端新增 → 弹窗报数并刷新列表。v1 限制：删除不跨设备同步；自动同步（metadata query 监听）留待后续 |
+| iCloud 同步：iCloud Drive 文档容器 | 数据本就是"每跑一个 UUID.json 文件"，直接在 iCloud 容器 `Documents/Runs/` 做文件并集合并（记录不可变→无内容冲突），比 CloudKit 轻。手动触发（历史页云朵按钮）→ `CloudSyncClient` 上传本地新增 + 下载云端新增 → 弹窗报数并刷新列表。v1 限制：隐藏/恢复只改文件内容、并集合并不覆盖已有文件，因此删除状态不跨设备同步；自动同步（metadata query 监听）留待后续 |
+| 软删除（isHidden 标记） | 删除只隐藏不真删，防误删丢数据；文件原地改写（`setHidden`），文件名不变故与 iCloud 并集合并天然兼容。历史页眼睛开关"显示所有数据"可查看并恢复（开关会话内有效，默认关）；列表滑动 Delete=隐藏、隐藏行滑动 Restore=恢复；详情页删除同走隐藏 |
 | 地图偏移修正（GCJ-02） | 中国大陆地图瓦片用加密 GCJ-02 坐标，CoreLocation 输出 WGS-84，直接绘制轨迹会整体偏移数百米。存储保留 WGS-84 原始数据，仅渲染时经 `displayCoordinate` 转换（公开近似算法，精度 1-2 米；境外自动跳过）。蓝色定位点由系统处理无需转换；距离计算仍基于 WGS-84 |
 | History 用 `StackState` 导航 | TCA 标准栈导航模式，路径可单测 |
 
@@ -132,4 +134,4 @@ struct RunsRepository {
 
 - **FormatTests**：haversine 用已知距离（纬度 1° ≈ 111km）断言；配速/时长格式化边界（0 距离 → `--`）
 - **RecordFeatureTests**：`TestClock` 虚拟推进计时；mock 定位流喂 1km 正方形四角 → 断言距离 ≈ 3km；暂停期间 tick 不累计；`finishTapped` 保存的 `Run` 字段正确
-- **HistoryFeatureTests**：加载按日期倒序；滑动删除后列表更新且 repository 收到 delete
+- **HistoryFeatureTests**：加载按日期倒序；滑动删除（软删除）后标记 isHidden 且 repository 收到 setHidden；"显示所有数据"开关过滤隐藏记录；恢复；详情页删除走隐藏；旧 JSON 无 isHidden 字段解码兼容

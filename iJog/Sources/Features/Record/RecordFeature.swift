@@ -25,6 +25,9 @@ struct RecordFeature {
     var elapsed: TimeInterval = 0
     var distance: Double = 0
     var route: [RoutePoint] = []
+    /// 距离累计锚点：最后见过的有效位置。自动暂停期间仅移动锚点（位移不计入），
+    /// 恢复时从锚点续算，避免暂停期间的位移在恢复瞬间一次性跳入距离
+    var anchor: RoutePoint?
     var path = StackState<RunDetailFeature.State>()
     var isLocationDenied = false
     /// 启动时发现的待恢复草稿（弹窗询问恢复/丢弃）
@@ -112,6 +115,7 @@ struct RecordFeature {
         state.elapsed = 0
         state.distance = 0
         state.route = []
+        state.anchor = nil
         state.isAutoPaused = false
         state.slowSeconds = 0
         state.lastSpeed = nil
@@ -141,6 +145,8 @@ struct RecordFeature {
         guard state.session == .paused else { return .none }
         state.session = .running
         resetAutoPause(&state)
+        // 手动暂停期间 GPS 已关闭、位移不可知：清掉锚点，恢复后首个定位点只重新锚定、不计距离
+        state.anchor = nil
         locationClient.startUpdates()
         return trackingEffects
 
@@ -160,7 +166,7 @@ struct RecordFeature {
       case .timerTicked:
         guard state.session == .running else { return .none }
 
-        // 自动暂停中：累计暂停时长，持续 5 分钟自动结束当前跑步
+        // 自动暂停中：冻结计时，累计暂停时长，持续 5 分钟自动结束当前跑步
         if state.isAutoPaused {
           state.slowSeconds += 1
           if state.slowSeconds >= AutoPause.confirmSeconds + AutoPause.stopAfterPausedSeconds {
@@ -169,18 +175,28 @@ struct RecordFeature {
           return .none
         }
 
-        // 持续慢速：不计时，累计确认窗口；满 10 秒进入自动暂停
-        if state.autoPauseEnabled,
-          let speed = state.lastSpeed,
-          speed < AutoPause.slowSpeed
-        {
-          state.slowSeconds += 1
-          if state.slowSeconds >= AutoPause.confirmSeconds {
-            state.isAutoPaused = true
+        // 慢速计分（滞回 + 衰减）：GPS 多普勒速度有毛刺，任何一次 ≥ 阈值就清零会让
+        // 走路时的计数永远凑不满确认窗口。改为：< slowSpeed 记 +1，≥ resumeSpeed 清零，
+        // 滞回带 [slowSpeed, resumeSpeed) 内 -1 回落——毛刺不阻断累计，稳定慢跑也不误判
+        if state.autoPauseEnabled, let speed = state.lastSpeed {
+          if speed < AutoPause.slowSpeed {
+            state.slowSeconds += 1
+          } else if speed >= AutoPause.resumeSpeed {
+            state.slowSeconds = 0
+          } else if state.slowSeconds > 0 {
+            state.slowSeconds -= 1
           }
+        } else {
+          state.slowSeconds = 0
+        }
+
+        // 确认窗口期间时间/距离照常计入（配速 = 时间/距离，只冻一项会让配速虚降），
+        // 满 10 分进入自动暂停那一刻起才同时冻结
+        if state.autoPauseEnabled, state.slowSeconds >= AutoPause.confirmSeconds {
+          state.isAutoPaused = true
           return .none
         }
-        state.slowSeconds = 0
+
         state.elapsed += 1
         // 崩溃保护：每满 10 秒写一次草稿
         if Int(state.elapsed) % 10 == 0 {
@@ -195,18 +211,22 @@ struct RecordFeature {
           state.lastSpeed = speed
         }
 
-        // 自动暂停中：速度回升到恢复阈值才继续（该点照常累计），否则丢弃
+        // 自动暂停中：速度回升到恢复阈值才继续，期间仅移动距离锚点（暂停期间的位移不计入）
         if state.isAutoPaused {
-          guard speed >= AutoPause.resumeSpeed else { return .none }
+          guard speed >= AutoPause.resumeSpeed else {
+            state.anchor = point
+            return .none
+          }
           state.isAutoPaused = false
           state.slowSeconds = 0
         }
 
-        if let last = state.route.last {
+        if let last = state.anchor {
           let delta = haversine(last.coordinate, point.coordinate)
           guard delta >= 2 else { return .none } // 过滤 GPS 静止抖动
           state.distance += delta
         }
+        state.anchor = point
         state.route.append(point)
         return .none
 
@@ -234,6 +254,7 @@ struct RecordFeature {
         state.elapsed = draft.elapsed
         state.distance = draft.distance
         state.route = draft.route
+        state.anchor = draft.route.last
         state.session = draft.isPaused ? .paused : .running
         if draft.isPaused {
           return .none
@@ -357,6 +378,7 @@ struct RecordFeature {
     state.elapsed = 0
     state.distance = 0
     state.route = []
+    state.anchor = nil
     resetAutoPause(&state)
   }
 

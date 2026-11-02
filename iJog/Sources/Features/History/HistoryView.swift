@@ -13,19 +13,49 @@ struct HistoryView: View {
           } description: {
             Text("Start your first run in the Record tab.")
           }
+        } else if store.visibleRuns.isEmpty {
+          ContentUnavailableView {
+            Label("No Visible Runs", systemImage: "eye.slash")
+          } description: {
+            Text("Turn on Show All to see hidden runs.")
+          }
         } else {
           List {
-            ForEach(store.runs) { run in
+            ForEach(store.visibleRuns) { run in
               NavigationLink(state: RunDetailFeature.State(run: run)) {
                 RunRow(run: run)
               }
+              .swipeActions {
+                if run.isHidden {
+                  Button {
+                    store.send(.restoreTapped(run.id))
+                  } label: {
+                    Label("Restore", systemImage: "arrow.uturn.backward")
+                  }
+                  .tint(.green)
+                } else {
+                  Button(role: .destructive) {
+                    store.send(.hideTapped(run.id))
+                  } label: {
+                    Label("Delete", systemImage: "trash")
+                  }
+                }
+              }
             }
-            .onDelete { store.send(.delete($0)) }
           }
         }
       }
       .navigationTitle("History")
       .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button {
+            store.send(.toggleShowsHiddenTapped)
+          } label: {
+            Image(systemName: store.showsHidden ? "eye" : "eye.slash")
+          }
+          .accessibilityLabel(Text("Show All"))
+          .accessibilityValue(Text(store.showsHidden ? "On" : "Off"))
+        }
         ToolbarItem(placement: .topBarTrailing) {
           Button {
             store.send(.syncTapped)
@@ -53,12 +83,23 @@ private struct RunRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text(
-        run.startedAt.formatted(
-          .dateTime.year().month().day().weekday(.wide).hour().minute()
+      HStack(spacing: 8) {
+        Text(
+          run.startedAt.formatted(
+            .dateTime.year().month().day().weekday(.wide).hour().minute()
+          )
         )
-      )
-      .font(.subheadline.weight(.medium))
+        .font(.subheadline.weight(.medium))
+
+        if run.isHidden {
+          Text("Hidden")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.fill.tertiary, in: Capsule())
+        }
+      }
 
       HStack(spacing: 24) {
         metric(value: formatDistance(run.distance), label: "Distance", prominent: true)
@@ -70,6 +111,7 @@ private struct RunRow: View {
       }
     }
     .padding(.vertical, 4)
+    .opacity(run.isHidden ? 0.45 : 1)
   }
 
   private func metric(value: String, label: String, prominent: Bool = false) -> some View {

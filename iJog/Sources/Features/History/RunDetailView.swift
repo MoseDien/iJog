@@ -107,7 +107,7 @@ struct RunDetailView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
       Text(value)
-        .font(.system(.title3, design: .rounded, weight: .semibold))
+        .font(.system(.title2, design: .rounded, weight: .semibold))
         .monospacedDigit()
         .lineLimit(1)
         .minimumScaleFactor(0.5)

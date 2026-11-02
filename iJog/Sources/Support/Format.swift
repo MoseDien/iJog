@@ -12,10 +12,13 @@ func haversine(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Doub
   return 2 * radius * asin(min(1, sqrt(h)))
 }
 
-/// h:mm:ss（向上取整到秒，避免跑步中长时间显示 0:00:00）
+/// 不足 1 小时显示 mm:ss，满 1 小时显示 h:mm:ss（向上取整到秒，避免跑步中长时间显示 00:00）
 func formatDuration(_ interval: TimeInterval) -> String {
   let seconds = Int(interval.rounded(.up))
-  return String(format: "%d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+  if seconds >= 3600 {
+    return String(format: "%d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+  }
+  return String(format: "%02d:%02d", seconds / 60, seconds % 60)
 }
 
 /// x.xx 公里 / x.xx km
